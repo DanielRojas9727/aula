@@ -12,6 +12,7 @@ export const state = {
   progreso: {},             // { actId: { estado, fechaCumplimiento, puntaje, notas, ts } }
   respuestas: [],           // [{ id, qid, temaId, ok, ts, modo }]
   vistos: {},               // { videoId: ts }
+  ajustes: null,            // última reorganización { ts, previo: { id: { fecha, omitida } }, resumen }
 };
 const emit = () => listeners.forEach((fn) => fn(state));
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
@@ -40,7 +41,7 @@ const resumen = (d) => ({ empleos: d.empleos, temas: d.temas, videos: d.videos |
 async function initDemo() {
   state.demo = true;
   const K = 'aula-demo-avance';
-  let mem = { progreso: {}, respuestas: [], vistos: {} };
+  let mem = { progreso: {}, respuestas: [], vistos: {}, ajustes: null };
   try { const raw = localStorage.getItem(K); if (raw) mem = JSON.parse(raw); } catch (e) {}
   const sync = () => { try { localStorage.setItem(K, JSON.stringify(mem)); } catch (e) {} Object.assign(state, structuredClone(mem)); emit(); };
   try {
@@ -53,7 +54,17 @@ async function initDemo() {
     addRespuesta: async (r) => { mem.respuestas.push({ id: Math.random().toString(36).slice(2), ...r }); sync(); },
     marcarVisto: async (vid) => { mem.vistos[vid] = Date.now(); sync(); },
     importar: async (d) => { const n = validarContenido(d); state.contenido = { ...resumen(d), actividades: d.actividades, preguntas: d.preguntas, importado: Date.now() }; emit(); return n; },
-    borrarAvance: async () => { mem = { progreso: {}, respuestas: [], vistos: {} }; sync(); },
+    borrarAvance: async () => { mem = { progreso: {}, respuestas: [], vistos: {}, ajustes: null }; sync(); },
+    reprogramar: async (cambios, omitidas, previo, resumen) => {
+      for (const c of cambios) mem.progreso[c.id] = { ...(mem.progreso[c.id] || {}), fecha: c.a, ts: Date.now() };
+      for (const o of omitidas) mem.progreso[o.id] = { ...(mem.progreso[o.id] || {}), omitida: true, ts: Date.now() };
+      mem.ajustes = { ts: Date.now(), previo, resumen }; sync();
+    },
+    deshacerReprogramacion: async () => {
+      const p = mem.ajustes?.previo || {};
+      for (const [id, v] of Object.entries(p)) mem.progreso[id] = { ...(mem.progreso[id] || {}), fecha: v.fecha, omitida: v.omitida };
+      mem.ajustes = null; sync();
+    },
     login: async () => {}, logout: async () => {},
   };
   Object.assign(state, structuredClone(mem));
@@ -102,10 +113,24 @@ async function initFirebase() {
       return n;
     },
     borrarAvance: async () => {
-      for (const n of ['progreso', 'respuestas', 'vistos']) {
+      for (const n of ['progreso', 'respuestas', 'vistos', 'ajustes']) {
         const s = await F.getDocs(col(n));
         for (let i = 0; i < s.docs.length; i += 400) { const b = F.writeBatch(fdb); s.docs.slice(i, i + 400).forEach((x) => b.delete(x.ref)); await b.commit(); }
       }
+    },
+    reprogramar: async (cambios, omitidas, previo, resumen) => {
+      const ops = [
+        ...cambios.map((c) => [docu('progreso', c.id), { fecha: c.a, ts: Date.now() }]),
+        ...omitidas.map((o) => [docu('progreso', o.id), { omitida: true, ts: Date.now() }]),
+        [docu('ajustes', 'reprogramacion'), { ts: Date.now(), previo, resumen }],
+      ];
+      for (let i = 0; i < ops.length; i += 400) { const b = F.writeBatch(fdb); ops.slice(i, i + 400).forEach(([r, x]) => b.set(r, x, { merge: true })); await b.commit(); }
+    },
+    deshacerReprogramacion: async () => {
+      const p = state.ajustes?.previo || {};
+      const ops = Object.entries(p).map(([id, v]) => [docu('progreso', id), { fecha: v.fecha, omitida: v.omitida, ts: Date.now() }]);
+      for (let i = 0; i < ops.length; i += 400) { const b = F.writeBatch(fdb); ops.slice(i, i + 400).forEach(([r, x]) => b.set(r, x, { merge: true })); await b.commit(); }
+      await F.deleteDoc(docu('ajustes', 'reprogramacion'));
     },
     login: async () => {
       const p = new A.GoogleAuthProvider();
@@ -129,6 +154,7 @@ async function initFirebase() {
     unsubs.push(F.onSnapshot(col('contenido'), (s) => { piezas = {}; s.docs.forEach((d) => (piezas[d.id] = d.data())); armarContenido(meta); emit(); }, fail));
     unsubs.push(F.onSnapshot(col('progreso'), (s) => { const o = {}; s.docs.forEach((d) => (o[d.id] = d.data())); state.progreso = o; listo(); }, fail));
     unsubs.push(F.onSnapshot(col('respuestas'), (s) => { state.respuestas = s.docs.map((d) => ({ id: d.id, ...d.data() })); listo(); }, fail));
+    unsubs.push(F.onSnapshot(docu('ajustes', 'reprogramacion'), (s) => { state.ajustes = s.exists() ? s.data() : null; emit(); }, () => {}));
     unsubs.push(F.onSnapshot(col('vistos'), (s) => { const o = {}; s.docs.forEach((d) => (o[d.id] = d.data().ts)); state.vistos = o; listo(); }, fail));
   });
 }
