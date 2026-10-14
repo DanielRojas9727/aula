@@ -1,10 +1,9 @@
 // Configuración pública del proyecto Firebase (no es secreta: el acceso lo controlan las reglas de Firestore).
-// Pega aquí el bloque que entrega Firebase en Configuración del proyecto > Tus apps > App web.
 export const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: 'AIzaSyC4YRVS1aCUl1qyDHbwksyA91US2QvJ90k',
+  authDomain: 'aula-rojas.firebaseapp.com',
+  projectId: 'aula-rojas',
+  storageBucket: 'aula-rojas.firebasestorage.app',
+  messagingSenderId: '112189831008',
+  appId: '1:112189831008:web:eff0688c31462bdf751005',
 };
