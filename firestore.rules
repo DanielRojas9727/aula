@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Solo la cuenta de Daniel, con correo verificado por Google.
+    function esDaniel() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'daniel.rojas9727@gmail.com';
+    }
+    match /aula/principal { allow read, write: if esDaniel(); }
+    match /aula/principal/{document=**} { allow read, write: if esDaniel(); }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
