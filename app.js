@@ -1,6 +1,7 @@
 
 // Aula · interfaz. Los datos vienen de data.js (Firestore o modo demo).
 import { init, subscribe, state, db, validarContenido } from './data.js';
+import { planificar, previo } from './reorg.js';
 // ---------- utilidades ----------
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -48,13 +49,19 @@ const guardar = (p) => Promise.resolve(p).catch((e) => toast('No se pudo guardar
 let D = null, ACTS = [], TEMAS = {}, QS = [], VIDS = {};
 const EMP = { '241258': { corto: 'Caldas', cls: 'cal' }, '247478': { corto: 'Ibagué', cls: 'iba' } };
 
-let firmaContenido = null;
+let firmaContenido = null, BASE = [];
+// Vista efectiva del plan: aplica las fechas reprogramadas y quita los refuerzos omitidos (guardados en el avance)
+function vista() {
+  ACTS = BASE.filter((a) => !state.progreso[a.id]?.omitida)
+    .map((a) => ({ ...a, fechaPlan: a.fecha, fecha: state.progreso[a.id]?.fecha || a.fecha }))
+    .sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.opec < b.opec ? -1 : a.id < b.id ? -1 : 1));
+}
 function preparar(d) {
   D = d; TEMAS = {};
   d.temas.forEach((t) => (TEMAS[t.id] = t));
-  ACTS = [];
-  for (const [opec, lista] of Object.entries(d.actividades)) for (const a of lista) ACTS.push({ ...a, opec });
-  ACTS.sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.opec < b.opec ? -1 : 1));
+  BASE = [];
+  for (const [opec, lista] of Object.entries(d.actividades)) for (const a of lista) BASE.push({ ...a, opec });
+  vista();
   QS = d.preguntas;
   VIDS = d.videos || {};
 }
@@ -121,6 +128,7 @@ const NAV = [['inicio', 'Inicio', 'home'], ['preguntas', 'Preguntas', 'quiz'], [
 function go(r, s = {}) { ruta = r; sub = s; try { history.replaceState(null, '', '#' + r); } catch (e) {} render(); window.scrollTo(0, 0); }
 function render() {
   if (!D) return;
+  vista();
   $('#app').innerHTML = rutas[ruta]();
   const act = ['plan', 'cronograma', 'estadisticas'].includes(ruta) ? 'mas' : ruta;
   $('#nav').innerHTML = NAV.map(([k, l, i]) => `<a href="#${k}" data-go="${k}" ${k === act ? 'aria-current="page"' : ''}>${icon(i, 22)}<span>${l}</span></a>`).join('');
@@ -176,7 +184,7 @@ function vInicio() {
         <div><span>Horas estudiadas</span><b class="num">${m.horas.toFixed(1)}</b></div>
         <div><span>Preguntas respondidas</span><b class="num">${nr ? `${nr} · ${pct(nok / nr)}` : '0'}</b></div>
       </div></div></section>
-    ${rec ? `<section class="reco"><div class="ic">${icon('spark')}</div><div style="min-width:0"><div class="eyebrow" style="color:var(--accent)">${rec.tipo === 'refuerzo' ? 'Requiere refuerzo' : rec.tipo === 'atraso' ? 'Pendiente atrasado' : 'Lo siguiente'}</div><b>${esc(rec.titulo)}</b><div class="small muted">${esc(rec.texto)}</div></div></section>` : ''}
+    ${rec ? `<section class="reco"><div class="ic">${icon('spark')}</div><div style="min-width:0"><div class="eyebrow" style="color:var(--accent)">${rec.tipo === 'refuerzo' ? 'Requiere refuerzo' : rec.tipo === 'atraso' ? 'Pendiente atrasado' : 'Lo siguiente'}</div><b>${esc(rec.titulo)}</b><div class="small muted">${esc(rec.texto)}</div>${rec.tipo === 'atraso' ? '<button class="btn-s" style="margin-top:8px" data-reorg>Reorganizar mi plan</button>' : ''}</div></section>` : ''}
     <section class="card"><div class="card-h"><h2>${hoy.length ? 'Hoy' : sigDia ? `Próximo día de estudio: ${fLarga(sigDia.fecha)}` : 'Sin actividades'}</h2><span class="small muted num">${listaDia.filter((a) => estado(a) === 'Completada').length} de ${listaDia.length}</span></div>
       ${listaDia.length ? `<div class="list">${listaDia.map((a) => itemAct(a)).join('')}</div>` : `<div class="empty"><b>Día libre</b>Hoy no hay actividades programadas.</div>`}
       <button class="btn ghost" style="margin-top:10px" data-go="plan">Ver la semana completa</button></section>
@@ -207,6 +215,32 @@ function vPlan() {
 }
 
 // --- Cronograma ---
+// --- Reorganizar pendientes (fase 3) ---
+const RO = { usarRefuerzos: true, viernes: false, confirmar: false };
+function propuesta() {
+  const opecs = P.empleo === 'todos' ? ['241258', '247478'] : [P.empleo];
+  return planificar({ acts: BASE, progreso: state.progreso, opecs, hoy: HOY, festivos: (D.festivos || []).map((f) => f.fecha), receso: D.receso, opciones: RO });
+}
+function tarjetaReorg() {
+  const pr = propuesta();
+  const filas = Object.entries(pr.resumen).map(([o, r]) => {
+    const tarde = r.finContenido && r.finContenido > r.finPlan;
+    return `<div class="trow"><div class="top"><b>${chipEmp(o)} OPEC ${o}</b><span class="chip ${r.atrasadas ? 'warn' : 'ok'}">${r.atrasadas} atrasada${r.atrasadas === 1 ? '' : 's'}</span></div>
+      <div class="small muted num">${r.movidas} sesiones cambian de fecha${r.refuerzosUsados ? ` · se usan ${r.refuerzosUsados} sesiones de refuerzo como colchón` : ''}</div>
+      <div class="small num" style="color:${tarde ? 'var(--bad)' : 'var(--ink-2)'}">Última sesión de estudio: ${r.finContenido ? fLarga(r.finContenido) : '—'}${tarde ? ` · ${r.diasExtra} días después del fin del plan (${fCorta(r.finPlan)})` : ''}</div></div>`;
+  }).join('');
+  const hay = pr.cambios.length + pr.omitidas.length;
+  return `<section class="card"><div class="card-h"><h2>Reorganizar pendientes</h2></div>
+    <p class="small muted" style="margin:0 0 8px">Mueve las sesiones no completadas a tus próximos días de estudio, en el mismo orden. Las pruebas de viernes y sábado no se mueven.</p>
+    ${filas}
+    <label class="small" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="ro-ref" ${RO.usarRefuerzos ? 'checked' : ''}> Usar las sesiones de refuerzo como colchón</label>
+    <label class="small" style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="ro-vie" ${RO.viernes ? 'checked' : ''}> Estudiar también los viernes</label>
+    ${RO.confirmar ? `<div class="fb ok"><b>¿Aplicar la reorganización?</b>Cambian ${pr.cambios.length} sesiones${pr.omitidas.length ? ` y se omiten ${pr.omitidas.length} refuerzos` : ''}. Puedes deshacerlo después.<div class="acts"><button class="btn-s" id="ro-si">Sí, reorganizar</button><button class="btn-s" id="ro-no">Cancelar</button></div></div>`
+      : `<button class="btn" style="margin-top:12px" id="ro-ver" ${hay ? '' : 'disabled'}>${hay ? 'Reorganizar mi plan' : 'Tu plan está al día'}</button>`}
+    ${state.ajustes ? `<button class="btn ghost" style="margin-top:8px" id="ro-undo">Deshacer la última reorganización (${fLarga(iso(new Date(state.ajustes.ts)))})</button>` : ''}
+  </section>`;
+}
+
 function vCronograma() {
   const tab = sub.tab || 'temas';
   const tabs = `<div class="tabs" role="tablist">${[['temas', 'Por temas'], ['semanas', 'Planeado vs real']].map(([k, l]) => `<button role="tab" aria-selected="${tab === k}" data-tab="${k}">${l}</button>`).join('')}</div>`;
@@ -218,21 +252,19 @@ function vCronograma() {
       <div class="bar"><i class="${s.e === 'Requiere refuerzo' ? 'acc' : ''}" style="width:${s.total ? (s.done / s.total) * 100 : 0}%"></i></div>
       <div class="small muted num">${s.done} de ${s.total} sesiones · ${fCorta(s.primera)} a ${fCorta(s.ultima)}${s.r.n ? ` · ${s.r.ok}/${s.r.n} aciertos` : ''}</div></div>`).join('')}</section>`;
   } else {
+    const sesiones = ACTS.filter((a) => enEmpleo(a) && esSesion(a));
+    const hechas = sesiones.filter((a) => estado(a) === 'Completada').length;
+    const debiaOriginal = BASE.filter((a) => enEmpleo(a) && esSesion(a) && a.fecha < HOY).length;
+    const atrasadas = sesiones.filter((a) => a.fecha < HOY && estado(a) !== 'Completada').length;
     const semanas = {};
-    for (const a of ACTS.filter((a) => enEmpleo(a) && esSesion(a))) { const k = lunesDe(a.fecha); (semanas[k] ||= []).push(a); }
-    const ks = Object.keys(semanas).sort();
-    let accP = 0, accR = 0;
-    const filas = ks.map((k) => { const xs = semanas[k]; const pasado = k <= lunesDe(HOY);
-      if (pasado) { accP += xs.filter((a) => a.fecha < HOY).length; }
-      accR += xs.filter((a) => estado(a) === 'Completada').length;
-      return { k, n: xs.length, r: xs.filter((a) => estado(a) === 'Completada').length, pasado, accP, accR }; });
-    const actual = filas.filter((f) => f.pasado).pop();
+    for (const a of sesiones) { const k = lunesDe(a.fecha); (semanas[k] ||= []).push(a); }
+    const filas = Object.keys(semanas).sort().map((k) => ({ k, n: semanas[k].length, r: semanas[k].filter((a) => estado(a) === 'Completada').length }));
     cuerpo = `<section class="card"><div class="card-h"><h2>A la fecha</h2></div><div class="stat3">
-        <div><b class="num">${actual ? actual.accP : 0}</b><span>Sesiones que debías llevar</span></div>
-        <div><b class="num">${actual ? actual.accR : 0}</b><span>Sesiones hechas</span></div>
-        <div><b class="num" style="color:${actual && actual.accP > actual.accR ? 'var(--warn)' : 'var(--ok)'}">${actual ? Math.max(0, actual.accP - actual.accR) : 0}</b><span>De retraso</span></div></div>
-        <button class="btn ghost" style="margin-top:12px" disabled title="Fase 3">Reorganizar pendientes · llega en la fase 3</button></section>
-      <section class="card"><div class="card-h"><h2>Semana a semana</h2><span class="small muted">hechas / planeadas</span></div>
+        <div><b class="num">${debiaOriginal}</b><span>Debías llevar según el plan original</span></div>
+        <div><b class="num">${hechas}</b><span>Sesiones hechas</span></div>
+        <div><b class="num" style="color:${atrasadas ? 'var(--warn)' : 'var(--ok)'}">${atrasadas}</b><span>Atrasadas en el plan actual</span></div></div></section>
+      ${tarjetaReorg()}
+      <section class="card"><div class="card-h"><h2>Semana a semana</h2><span class="small muted">hechas / programadas</span></div>
       ${filas.map((f) => `<div class="wk"><span class="num">${fCorta(f.k)}</span><div class="bar"><i class="${f.k === lunesDe(HOY) ? 'acc' : ''}" style="width:${(f.r / f.n) * 100}%"></i></div><span class="r num">${f.r}/${f.n}</span></div>`).join('')}</section>`;
   }
   return heroSimple('Mi cronograma', { extra: selEmpleo() }) + `<div class="body plain">${tabs}${cuerpo}</div>`;
@@ -387,6 +419,24 @@ function bind() {
   const vq = $('#vq', app); if (vq) vq.oninput = () => { sub = { q: vq.value }; const pos = vq.selectionStart; render(); const n = $('#vq'); n.focus(); n.setSelectionRange(pos, pos); };
   const rs = $('[data-reset]', app); if (rs) rs.onclick = () => { $('#reset-confirm').innerHTML = `<div class="fb bad"><b>¿Borrar todo tu avance?</b>Se perderán los estados, puntajes, respuestas y videos vistos. El plan y las preguntas se conservan.<div class="acts"><button class="btn-s" id="rs-si">Sí, borrar</button><button class="btn-s" id="rs-no">Cancelar</button></div></div>`;
     $('#rs-si').onclick = async () => { await guardar(db.borrarAvance()); toast('Avance borrado'); render(); }; $('#rs-no').onclick = () => ($('#reset-confirm').innerHTML = ''); };
+  const roRef = $('#ro-ref', app); if (roRef) roRef.onchange = () => { RO.usarRefuerzos = roRef.checked; RO.confirmar = false; render(); };
+  const roVie = $('#ro-vie', app); if (roVie) roVie.onchange = () => { RO.viernes = roVie.checked; RO.confirmar = false; render(); };
+  const roVer = $('#ro-ver', app); if (roVer) roVer.onclick = () => { RO.confirmar = true; render(); };
+  const roNo = $('#ro-no', app); if (roNo) roNo.onclick = () => { RO.confirmar = false; render(); };
+  const roSi = $('#ro-si', app); if (roSi) roSi.onclick = async () => {
+    const pr = propuesta(); const prev = previo(pr, state.progreso);
+    for (const c of pr.cambios) state.progreso[c.id] = { ...(state.progreso[c.id] || {}), fecha: c.a };
+    for (const o of pr.omitidas) state.progreso[o.id] = { ...(state.progreso[o.id] || {}), omitida: true };
+    state.ajustes = { ts: Date.now(), previo: prev, resumen: pr.resumen };
+    RO.confirmar = false; render();
+    await guardar(db.reprogramar(pr.cambios, pr.omitidas, prev, pr.resumen));
+    toast(`Plan reorganizado: ${pr.cambios.length} sesiones movidas`);
+  };
+  const roUn = $('#ro-undo', app); if (roUn) roUn.onclick = async () => {
+    for (const [id, v] of Object.entries(state.ajustes.previo || {})) state.progreso[id] = { ...(state.progreso[id] || {}), fecha: v.fecha, omitida: v.omitida };
+    await guardar(db.deshacerReprogramacion()); state.ajustes = null; toast('Reorganización deshecha'); render();
+  };
+  const reo = $('[data-reorg]', app); if (reo) reo.onclick = () => go('cronograma', { tab: 'semanas' });
   const imp = $('#imp', app); if (imp) imp.onchange = () => importarArchivo(imp.files[0]);
   const lo = $('[data-logout]', app); if (lo) lo.onclick = () => db.logout();
   clearInterval(tick);
