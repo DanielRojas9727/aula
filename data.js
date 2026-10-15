@@ -35,7 +35,7 @@ export function validarContenido(d) {
   for (const q of d.preguntas) { if (qids.has(q.id)) throw new Error('ID de pregunta repetido: ' + q.id); qids.add(q.id); }
   return { actividades: ids.size, preguntas: qids.size, temas: d.temas.length };
 }
-const resumen = (d) => ({ empleos: d.empleos, temas: d.temas, videos: d.videos || {}, festivos: d.festivos || [], receso: d.receso || null, version: d.generado || null });
+const resumen = (d) => ({ empleos: d.empleos, temas: d.temas, videos: d.videos || {}, documentos: d.documentos || [], festivos: d.festivos || [], receso: d.receso || null, version: d.generado || null });
 
 // ---------------- Modo demo (pruebas sin Firebase) ----------------
 async function initDemo() {
@@ -53,6 +53,7 @@ async function initDemo() {
     setProgreso: async (id, patch) => { mem.progreso[id] = { ...(mem.progreso[id] || {}), ...patch, ts: Date.now() }; sync(); },
     addRespuesta: async (r) => { mem.respuestas.push({ id: Math.random().toString(36).slice(2), ...r }); sync(); },
     marcarVisto: async (vid) => { mem.vistos[vid] = Date.now(); sync(); },
+    desmarcarVisto: async (vid) => { delete mem.vistos[vid]; sync(); },
     importar: async (d) => { const n = validarContenido(d); state.contenido = { ...resumen(d), actividades: d.actividades, preguntas: d.preguntas, importado: Date.now() }; emit(); return n; },
     borrarAvance: async () => { mem = { progreso: {}, respuestas: [], vistos: {}, ajustes: null }; sync(); },
     reprogramar: async (cambios, omitidas, previo, resumen) => {
@@ -99,6 +100,7 @@ async function initFirebase() {
     setProgreso: (id, patch) => F.setDoc(docu('progreso', id), { ...patch, ts: Date.now() }, { merge: true }),
     addRespuesta: (r) => F.addDoc(col('respuestas'), r),
     marcarVisto: (vid) => F.setDoc(docu('vistos', vid), { ts: Date.now() }),
+    desmarcarVisto: (vid) => F.deleteDoc(docu('vistos', vid)),
     // Importa o actualiza el CONTENIDO. El avance (progreso, respuestas, vistos) no se toca.
     importar: async (d) => {
       const n = validarContenido(d);
@@ -163,5 +165,5 @@ export async function init() {
   const demo = new URLSearchParams(location.search).has('demo');
   if (demo) return initDemo();
   if (!firebaseConfig || !firebaseConfig.apiKey) { state.sinConfig = true; state.ready = true; emit(); return; }
-  try { await initFirebase(); } catch (e) { state.authError = 'No se pudo conectar: ' + e.message; state.ready = true; emit(); }
+  try { await initFirebase(); } catch (e) { state.authError = navigator.onLine === false || /fetch|import|network/i.test(e.message) ? 'Sin conexión. Abre Aula una vez con internet; después funciona también sin conexión.' : 'No se pudo conectar: ' + e.message; state.ready = true; emit(); }
 }
