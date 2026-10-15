@@ -35,7 +35,7 @@ const IC = {
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
 };
 const icon = (k, s = 20) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
-const LOGO = '<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="11" fill="#EE7B1F"/><path d="M9 13.5c4-1.6 7.6-1.2 11 1.3 3.4-2.5 7-2.9 11-1.3v14c-4-1.6-7.6-1.2-11 1.3-3.4-2.5-7-2.9-11-1.3z" fill="#fff"/><path d="M20 14.8v14" stroke="#EE7B1F" stroke-width="1.6"/></svg>';
+const LOGO = '<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="12" style="fill:var(--accent)"/><g style="fill:none;stroke:var(--on-accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 13.5c3.5-1.4 7-1 10.5 1.3 3.5-2.3 7-2.7 10.5-1.3v13.5c-3.5-1.4-7-1-10.5 1.3-3.5-2.3-7-2.7-10.5-1.3z"/><path d="M20 14.8v13.5"/></g></svg>';
 
 // ---------- almacenamiento local del prototipo ----------
 // Preferencia local (solo este dispositivo): empleo seleccionado
@@ -133,22 +133,22 @@ function recomendacion() {
 // ---------- vista ----------
 let ruta = 'inicio', sub = {};
 const rutas = { inicio: vInicio, preguntas: vPreguntas, videos: vVideos, pdfs: vPdfs, mas: vMas, plan: vPlan, cronograma: vCronograma, estadisticas: vEstadisticas };
-const NAV = [['inicio', 'Inicio', 'home'], ['preguntas', 'Preguntas', 'quiz'], ['videos', 'Videos', 'play'], ['pdfs', 'PDFs', 'doc'], ['mas', 'Más', 'more']];
+const NAV = [['inicio', 'Inicio', 'home'], ['preguntas', 'Preguntas', 'quiz'], ['videos', 'Videos', 'play'], ['pdfs', 'Biblioteca', 'doc'], ['mas', 'Más', 'more']];
 function go(r, s = {}) { ruta = r; sub = s; try { history.replaceState(null, '', '#' + r); } catch (e) {} render(); window.scrollTo(0, 0); }
 function render() {
   if (!D) return;
   vista();
   $('#app').innerHTML = rutas[ruta]();
   const act = ['plan', 'cronograma', 'estadisticas'].includes(ruta) ? 'mas' : ruta;
-  $('#nav').innerHTML = NAV.map(([k, l, i]) => `<a href="#${k}" data-go="${k}" ${k === act ? 'aria-current="page"' : ''}>${icon(i, 22)}<span>${l}</span></a>`).join('');
+  $('#nav').innerHTML = NAV.map(([k, l, i]) => `<a href="#${k}" data-go="${k}" ${k === act ? 'aria-current="page"' : ''}><span class="ind">${icon(i, 22)}</span><span>${l}</span></a>`).join('');
   bind();
 }
 function heroSimple(titulo, { back = true, extra = '' } = {}) {
   return `<div class="hero slim"><div class="topbar">${back ? `<button class="back" data-back aria-label="Volver">${icon('back')}</button>` : LOGO}<span class="t">${esc(titulo)}</span></div>${extra}</div>`;
 }
 function selEmpleo() {
-  const ops = [['todos', 'Ambos empleos'], ['241258', 'Caldas · 241258'], ['247478', 'Ibagué · 247478']];
-  return `<div class="seg" role="group" aria-label="Empleo">${ops.map(([k, l]) => `<button data-emp="${k}" aria-pressed="${P.empleo === k}">${l}</button>`).join('')}</div>`;
+  const ops = [['todos', 'Ambos', 'Ambos empleos'], ['241258', 'Caldas', 'Caldas, OPEC 241258'], ['247478', 'Ibagué', 'Ibagué, OPEC 247478']];
+  return `<div class="seg seg3" role="group" aria-label="Empleo">${ops.map(([k, l, al]) => `<button data-emp="${k}" aria-pressed="${P.empleo === k}" aria-label="${al}">${P.empleo === k ? icon('check', 16) : ''}${l}</button>`).join('')}</div>`;
 }
 function chipEmp(opec) { const e = EMP[opec]; return `<span class="chip ${e.cls}">${e.corto}</span>`; }
 function chipEstado(e) { const m = { Completada: 'ok', 'En curso': 'warn', 'Requiere refuerzo': 'bad', Pendiente: 'neutral' }; return `<span class="chip ${m[e] || 'neutral'}">${e}</span>`; }
@@ -186,22 +186,23 @@ function vInicio() {
   const listaDia = hoy.length ? hoy : sigDia ? ACTS.filter((a) => enEmpleo(a) && a.fecha === sigDia.fecha) : [];
   const nr = RESP().length, nok = RESP().filter((r) => r.ok).length;
   return `<div class="hero"><div class="topbar">${LOGO}<span class="t">Aula</span>${state.demo ? '<span class="chip acc">Demo</span>' : ''}</div>
-    <div class="greet">¡Hola, Daniel!</div><div class="sub">Hoy es ${fLarga(HOY)} · pruebas CNSC previstas para agosto de 2027</div>${selEmpleo()}</div>
+    <div class="sub">${fLarga(HOY).replace(/^./, (c) => c.toUpperCase())}</div><div class="greet">Hola, Daniel</div><div class="sub">Pruebas CNSC previstas para agosto de 2027</div>${selEmpleo()}</div>
   <div class="body lift">
-    <section class="card"><div class="card-h"><h2>Tu avance real</h2><button class="link" data-go="estadisticas">Ver más</button></div>
-      <div class="progress">${ring(m.avance, 'del plan')}<div class="kv">
-        <div><span>Sesiones completadas</span><b class="num">${m.done} de ${m.ses}</b></div>
-        <div><span>Sesiones atrasadas</span><b class="num" style="color:${m.atras ? 'var(--warn)' : 'inherit'}">${m.atras}</b></div>
-        <div><span>Horas estudiadas</span><b class="num">${m.horas.toFixed(1)}</b></div>
-        <div><span>Preguntas respondidas</span><b class="num">${nr ? `${nr} · ${pct(nok / nr)}` : '0'}</b></div>
-      </div></div></section>
+    <section class="card"><div class="card-h"><h2>Avance del plan</h2><button class="link" data-go="estadisticas">Ver detalle</button></div>
+      <div class="big-n"><b class="num">${m.done}</b><span>de ${m.ses} sesiones</span></div>
+      <div class="bar lg" role="img" aria-label="${pct(m.avance)} del plan"><i class="acc" style="width:${Math.max(m.avance * 100, m.done ? 2 : 0)}%"></i></div>
+      <div class="tiles">
+        <div><b class="num" style="${m.atras ? 'color:var(--warn)' : ''}">${m.atras}</b><span>atrasadas</span></div>
+        <div><b class="num">${m.horas.toFixed(1).replace('.', ',')} h</b><span>estudiadas</span></div>
+        <div><b class="num">${nr ? pct(nok / nr) : '0'}</b><span>${nr ? `aciertos · ${nr}` : 'preguntas'}</span></div>
+      </div></section>
     ${rec ? `<section class="reco"><div class="ic">${icon('spark')}</div><div style="min-width:0"><div class="eyebrow" style="color:var(--accent)">${rec.tipo === 'refuerzo' ? 'Requiere refuerzo' : rec.tipo === 'atraso' ? 'Pendiente atrasado' : rec.tipo === 'practica' ? 'Pon a prueba lo estudiado' : 'Lo siguiente'}</div><b>${esc(rec.titulo)}</b><div class="small muted">${esc(rec.texto)}</div>${rec.tipo === 'atraso' ? '<button class="btn-s" style="margin-top:8px" data-reorg>Reorganizar mi plan</button>' : ''}${rec.tema ? `<button class="btn-s" style="margin-top:8px" data-practicar="${rec.tema}">Practicar ahora</button>` : ''}</div></section>` : ''}
     <section class="card"><div class="card-h"><h2>${hoy.length ? 'Hoy' : sigDia ? `Próximo día de estudio: ${fLarga(sigDia.fecha)}` : 'Sin actividades'}</h2><span class="small muted num">${listaDia.filter((a) => estado(a) === 'Completada').length} de ${listaDia.length}</span></div>
       ${listaDia.length ? `<div class="list">${listaDia.map((a) => itemAct(a)).join('')}</div>` : `<div class="empty"><b>Día libre</b>Hoy no hay actividades programadas.</div>`}
       <button class="btn ghost" style="margin-top:10px" data-go="plan">Ver la semana completa</button></section>
-    ${prox ? `<section class="card"><div class="card-h"><h2>Próxima prueba</h2>${chipEmp(prox.opec)}</div><b>${esc(prox.tipo)} · ${fLarga(prox.fecha)}</b><div class="small muted">${esc(prox.actividad)} · ${Math.round(prox.duracionMin / 6) / 10} h</div></section>` : ''}
+    ${prox ? `<section class="card"><div class="card-h"><h2>Próxima prueba</h2>${chipEmp(prox.opec)}</div><b>${esc(prox.tipo)} · ${fLarga(prox.fecha)}</b><div class="small muted">${esc(prox.actividad)} · ${prox.duracionMin} min</div></section>` : ''}
     <section><div class="eyebrow" style="margin:4px 2px 8px">Acceso rápido</div><div class="quick">
-      ${[['preguntas', 'Practicar preguntas', `${QS.length} preguntas en el banco`, 'quiz', 'var(--accent)'], ['videos', 'Clases de YouTube', 'Videos para tus temas', 'play', '#C2412E'], ['cronograma', 'Cronograma', 'Avance por temas', 'cal', 'var(--info)'], ['pdfs', 'Biblioteca', DOCS.length ? `${DOCS.length} documentos con resumen` : 'Material y normas', 'doc', 'var(--ok)']]
+      ${[['preguntas', 'Practicar preguntas', `${QS.length} preguntas en el banco`, 'quiz', 'var(--accent)'], ['videos', 'Clases de YouTube', 'Videos para tus temas', 'play', 'var(--tert)'], ['cronograma', 'Cronograma', 'Avance por temas', 'cal', 'var(--info)'], ['pdfs', 'Biblioteca', DOCS.length ? `${DOCS.length} documentos con resumen` : 'Material y normas', 'doc', 'var(--ok)']]
         .map(([r, t, s, i, c]) => `<button class="q" data-go="${r}"><span class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${icon(i)}</span><b>${t}</b><span>${s}</span></button>`).join('')}
     </div></section>
     ${state.demo ? '<p class="notice">Modo demo: el avance se guarda solo en este navegador.</p>' : ''}
