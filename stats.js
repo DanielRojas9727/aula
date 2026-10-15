@@ -79,7 +79,8 @@ export function graficaEvolucion(semanas, minimo = 65) {
     const lines = segs.filter((sg) => sg.length > 1).map((sg) => `<polyline class="ln ${cls}" points="${sg.map((p) => p.slice(0, 2).join(',')).join(' ')}"/>`).join('');
     const dots = pts.filter(Boolean).map(([px, py, s]) => `<circle class="dot ${cls}" cx="${px}" cy="${py}" r="4.5"><title>${esc(nombre)} · semana del ${esc(s.etiqueta)}: ${Math.round(s[key] * 100)}%${key === 'practica' ? ` (${s.n} respuestas)` : ''}</title></circle>`).join('');
     const last = pts.filter(Boolean).pop();
-    const lab = last ? `<text class="dl ${cls}" x="${last[0] + 8}" y="${last[1] + 4}">${Math.round(last[2][key] * 100)}%</text>` : '';
+    const ly = last ? (Math.abs(last[1] - y(minimo)) < 12 ? (last[1] <= y(minimo) ? last[1] - 8 : last[1] + 14) : last[1] + 4) : 0;
+    const lab = last ? `<text class="dl ${cls}" x="${last[0] + 8}" y="${ly}">${Math.round(last[2][key] * 100)}%</text>` : '';
     return lines + dots + lab;
   };
   const grid = [0, 50, 100].map((v) => `<line class="gr" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('');
