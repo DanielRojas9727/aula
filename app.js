@@ -47,7 +47,7 @@ const toast = (t) => { let el = document.getElementById('toast'); if (!el) { el 
 const guardar = (p) => Promise.resolve(p).catch((e) => toast('No se pudo guardar: ' + e.message));
 
 // ---------- datos ----------
-let D = null, ACTS = [], TEMAS = {}, QS = [], VIDS = {};
+let D = null, ACTS = [], TEMAS = {}, QS = [], VIDS = {}, DOCS = [];
 const EMP = { '241258': { corto: 'Caldas', cls: 'cal' }, '247478': { corto: 'Ibagué', cls: 'iba' } };
 
 let firmaContenido = null, BASE = [];
@@ -65,6 +65,7 @@ function preparar(d) {
   vista();
   QS = d.preguntas;
   VIDS = d.videos || {};
+  DOCS = d.documentos || [];
 }
 const estado = (a) => state.progreso[a.id]?.estado || a.estado || 'Pendiente';
 const puntaje = (a) => state.progreso[a.id]?.puntaje ?? a.puntaje ?? null;
@@ -73,6 +74,11 @@ const esSesion = (a) => a.tipo === 'Estudio' || a.tipo === 'Refuerzo';
 const esPrueba = (a) => a.tipo.startsWith('Prueba');
 const temaNom = (id) => TEMAS[id]?.nombre || '—';
 const preguntasDe = (tid) => QS.filter((q) => q.temaId === tid);
+// Documentos de la biblioteca de un tema (primero los de estudio) y si ya se consultaron
+const docsDe = (tid) => DOCS.filter((d) => d.temas.includes(tid)).sort((a, b) => (a.tipo === 'Estudio' ? 0 : 1) - (b.tipo === 'Estudio' ? 0 : 1));
+const docVisto = (d) => !!state.vistos[d.id];
+const docUrl = (d) => (d.driveId ? `https://drive.google.com/file/d/${encodeURIComponent(d.driveId)}/view` : null);
+const docEnEmpleo = (d) => !d.opec || P.empleo === 'todos' || String(d.opec) === P.empleo;
 
 function setEstado(a, e, extra = {}) {
   state.progreso[a.id] = { ...(state.progreso[a.id] || {}), estado: e, fechaCumplimiento: e === 'Completada' ? HOY : null, ...extra };
@@ -158,6 +164,8 @@ function itemAct(a, { conFecha = false } = {}) {
   let acts = '';
   if (v) acts += `<a class="btn-s" href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener" data-seen="${v.id}">${icon('play', 15)} Ver clase · ${esc(v.duracion)}</a>`;
   if (esSesion(a) && nq) acts += `<button class="btn-s" data-practicar="${a.temaId}">${icon('quiz', 15)} Practicar (${nq})</button>`;
+  const dd = esSesion(a) && a.temaId ? docsDe(a.temaId).filter(docEnEmpleo)[0] : null;
+  if (dd) acts += `<button class="btn-s" data-doc="${dd.id}">${icon('doc', 15)} Resumen${docVisto(dd) ? ' ✓' : ''}</button>`;
   if (esPrueba(a) && e !== 'Completada') acts += `<button class="btn-s" data-prueba="${a.id}">${icon('clock', 15)} Presentar prueba</button>`;
   if (e !== 'Completada') acts += `<button class="btn-s" data-refuerzo="${a.id}">Requiere refuerzo</button>`;
   if (esPrueba(a) && e === 'Completada') acts += `<span class="chip ok">Puntaje ${puntaje(a) != null ? pct(puntaje(a)) : 'sin registrar'}</span>`;
@@ -193,7 +201,7 @@ function vInicio() {
       <button class="btn ghost" style="margin-top:10px" data-go="plan">Ver la semana completa</button></section>
     ${prox ? `<section class="card"><div class="card-h"><h2>Próxima prueba</h2>${chipEmp(prox.opec)}</div><b>${esc(prox.tipo)} · ${fLarga(prox.fecha)}</b><div class="small muted">${esc(prox.actividad)} · ${Math.round(prox.duracionMin / 6) / 10} h</div></section>` : ''}
     <section><div class="eyebrow" style="margin:4px 2px 8px">Acceso rápido</div><div class="quick">
-      ${[['preguntas', 'Practicar preguntas', `${QS.length} preguntas en el banco`, 'quiz', 'var(--accent)'], ['videos', 'Clases de YouTube', 'Videos para tus temas', 'play', '#C2412E'], ['cronograma', 'Cronograma', 'Avance por temas', 'cal', 'var(--info)'], ['pdfs', 'Biblioteca', 'Material y normas', 'doc', 'var(--ok)']]
+      ${[['preguntas', 'Practicar preguntas', `${QS.length} preguntas en el banco`, 'quiz', 'var(--accent)'], ['videos', 'Clases de YouTube', 'Videos para tus temas', 'play', '#C2412E'], ['cronograma', 'Cronograma', 'Avance por temas', 'cal', 'var(--info)'], ['pdfs', 'Biblioteca', DOCS.length ? `${DOCS.length} documentos con resumen` : 'Material y normas', 'doc', 'var(--ok)']]
         .map(([r, t, s, i, c]) => `<button class="q" data-go="${r}"><span class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${icon(i)}</span><b>${t}</b><span>${s}</span></button>`).join('')}
     </div></section>
     ${state.demo ? '<p class="notice">Modo demo: el avance se guarda solo en este navegador.</p>' : ''}
@@ -354,15 +362,48 @@ function vVideos() {
 }
 
 // --- PDFs / biblioteca ---
+const fmtTam = (b) => (b >= 1e6 ? `${(b / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.round(b / 1024)} KB`);
+const CATS = [['', 'Todos'], ['Estudio', 'Estudio'], ['Empleo', 'Empleo'], ['Concurso', 'Concurso']];
+function filaDoc(d) {
+  const temas = d.temas.map(temaNom).filter((x) => x !== '—');
+  return `<button class="doc" data-doc="${d.id}"><span class="ic">PDF</span><span style="min-width:0;text-align:left"><b class="dt">${esc(d.titulo)}</b>
+    <span class="small muted">${esc(d.autor)} · ${d.paginas} págs · ${fmtTam(d.tamano)}</span>
+    <span class="meta">${d.opec ? chipEmp(String(d.opec)) : ''}${docVisto(d) ? '<span class="chip ok">Consultado</span>' : ''}${d.driveId ? '' : '<span class="chip warn">PDF sin enlazar</span>'}<span class="small muted">${esc(temas.slice(0, 3).join(' · '))}${temas.length > 3 ? ` +${temas.length - 3}` : ''}</span></span></span>${icon('chev', 16)}</button>`;
+}
 function vPdfs() {
-  const docs = [['Semana1_MIPG.pdf', 'MIPG', '6,0 MB'], ['Semana1_MIPG_Presentación.pdf', 'MIPG', '8,1 MB'], ['Semana1_Preguntas.docx', 'Constitución · Función pública · MIPG', '43 KB'],
-    ['2_Funciones_Cargo.pdf', 'Manual de funciones OPEC 247478', '365 KB'], ['1_Funciones Cargo.pdf', 'Manual de funciones OPEC 241258', '497 KB'], ['1_Acuerdo_SIMO.pdf', 'Acuerdo de la convocatoria', '770 KB']];
+  if (sub.doc) { const d = DOCS.find((x) => x.id === sub.doc); if (d) return vDoc(d); }
+  const qq = (sub.q || '').toLowerCase().trim(), cat = sub.cat || '';
+  const base = DOCS.filter(docEnEmpleo);
+  const lista = base.filter((d) => (!cat || d.tipo === cat) && (!qq || [d.titulo, d.autor, d.resumen, ...d.puntosClave, ...d.temas.map(temaNom)].join(' ').toLowerCase().includes(qq)));
+  const lun = lunesDe(HOY), dom = iso(addDays(parse(lun), 6));
+  const temasSem = new Set(ACTS.filter((a) => enEmpleo(a) && esSesion(a) && a.fecha >= lun && a.fecha <= dom).map((a) => a.temaId));
+  const semana = base.filter((d) => d.temas.some((t) => temasSem.has(t)));
   const conFuentes = D.temas.filter((t) => t.fuentes && t.fuentes.length);
-  return heroSimple('Biblioteca', { back: false }) + `<div class="body plain">
-    <section class="card"><div class="card-h"><h2>Tus documentos</h2><span class="chip warn">Por subir a Google Drive</span></div>
-      ${docs.map(([n, t, s]) => `<div class="doc"><span class="ic">${n.endsWith('.pdf') ? 'PDF' : 'DOC'}</span><div style="min-width:0"><b style="font-size:14px;word-break:break-word">${esc(n)}</b><div class="small muted">${esc(t)} · ${s}</div></div></div>`).join('')}
-      <p class="small muted" style="margin:10px 0 0">Cuando estén en Google Drive, cada documento abrirá desde aquí y llevará su resumen de puntos clave.</p></section>
+  const nv = base.filter(docVisto).length;
+  const docsCard = !DOCS.length ? `<section class="card"><div class="empty"><b>Biblioteca vacía</b>Importa un aula-datos.json que traiga documentos.</div></section>`
+    : `${!qq && !cat && semana.length ? `<section class="card"><div class="card-h"><h2>Para esta semana</h2></div>${semana.map(filaDoc).join('')}</section>` : ''}
+    <section class="card"><div class="card-h"><h2>${qq || cat ? `${lista.length} resultado${lista.length === 1 ? '' : 's'}` : 'Todos los documentos'}</h2><span class="small muted num">${nv} de ${base.length} consultados</span></div>
+      ${lista.length ? lista.map(filaDoc).join('') : '<div class="empty"><b>Sin resultados</b>Prueba con otra palabra, por ejemplo "MECI" o "señalización".</div>'}</section>`;
+  return heroSimple('Biblioteca', { back: false, extra: `<label class="field" style="margin-top:12px"><input id="dq" type="search" placeholder="Buscar en títulos, resúmenes y temas" value="${esc(sub.q || '')}" aria-label="Buscar documentos"></label>
+    <div class="seg" role="group" aria-label="Tipo de documento" style="margin-top:10px">${CATS.map(([k, l]) => `<button data-cat="${k}" aria-pressed="${cat === k}">${l}</button>`).join('')}</div>` }) + `<div class="body plain">${docsCard}
     <section class="card"><div class="card-h"><h2>Normas por tema</h2></div>${conFuentes.map((t) => `<details><summary style="padding:8px 0;font-weight:700;cursor:pointer">${esc(t.nombre)}</summary><ul class="small" style="margin:0 0 8px;padding-left:18px;color:var(--ink-2)">${t.fuentes.map((f) => `<li>${esc(f)}</li>`).join('')}</ul></details>`).join('')}</section>
+  </div>`;
+}
+function vDoc(d) {
+  const url = docUrl(d), visto = docVisto(d);
+  const temas = d.temas.filter((t) => TEMAS[t]);
+  return `<div class="hero slim"><div class="topbar"><button class="back" data-docback aria-label="Volver a la biblioteca">${icon('back')}</button><span class="t">Biblioteca</span></div></div><div class="body plain">
+    <section class="card"><div class="doc-h"><span class="ic">PDF</span><div style="min-width:0"><h2 style="margin:0 0 4px">${esc(d.titulo)}</h2><div class="small muted">${esc(d.autor)} · ${d.paginas} págs · ${fmtTam(d.tamano)}</div>
+      <div class="meta" style="margin-top:6px">${d.opec ? chipEmp(String(d.opec)) : ''}<span class="chip neutral">${esc({ Estudio: 'Para estudiar', Empleo: 'Del empleo', Concurso: 'Del concurso' }[d.tipo] || d.tipo)}</span>${visto ? '<span class="chip ok">Consultado</span>' : ''}</div></div></div>
+      <div style="display:grid;gap:8px;margin-top:14px">${url ? `<a class="btn" href="${url}" target="_blank" rel="noopener" data-docopen="${d.id}">${icon('doc', 18)} Abrir PDF en Google Drive</a>` : `<div class="fb"><b>PDF aún sin enlazar</b>El resumen ya está disponible. El archivo se podrá abrir desde aquí cuando esté enlazado a Google Drive.</div>`}
+      <button class="btn ghost" data-docmark="${d.id}">${visto ? 'Marcar como no consultado' : `${icon('check', 16)} Marcar como consultado`}</button></div></section>
+    <section class="card"><div class="card-h"><h2>Resumen</h2><span class="chip info">Generado con IA</span></div><p style="margin:0;line-height:1.55">${esc(d.resumen)}</p>
+      <p class="small muted" style="margin:10px 0 0">Resumen hecho a partir del texto del PDF. Ante cualquier diferencia en cifras, fechas o artículos, manda el documento.</p></section>
+    <section class="card"><div class="card-h"><h2>Puntos clave</h2><span class="small muted num">${d.puntosClave.length}</span></div><ol class="pk">${d.puntosClave.map((p) => `<li>${esc(p)}</li>`).join('')}</ol></section>
+    ${d.leer && d.leer.length ? `<section class="card"><div class="card-h"><h2>Qué leer</h2></div>${d.leer.map((l) => `<div class="kvrow"><b class="num">Págs. ${esc(l.paginas)}</b><span>${esc(l.tema)}</span></div>`).join('')}</section>` : ''}
+    ${d.repaso && d.repaso.length ? `<section class="card"><div class="card-h"><h2>Repaso rápido</h2></div><p class="small muted" style="margin:0 0 8px">Intenta responder sin mirar; luego verifica en los puntos clave.</p><ul class="pk">${d.repaso.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></section>` : ''}
+    ${temas.length ? `<section class="card"><div class="card-h"><h2>Temas relacionados</h2></div>${temas.map((t) => { const et = estadoTema(t), nq = preguntasDe(t).length;
+      return `<div class="trow"><div class="top"><b>${esc(temaNom(t))}</b><span class="chip ${et.cls}">${et.e}</span></div><div class="acts">${nq ? `<button class="btn-s" data-practicar="${t}">${icon('quiz', 15)} Practicar (${nq})</button>` : '<span class="small muted">Sin preguntas en el banco todavía</span>'}${VIDS[t] && VIDS[t].length ? `<button class="btn-s" data-vidtema="${t}">${icon('play', 15)} Videos (${VIDS[t].length})</button>` : ''}</div></div>`; }).join('')}</section>` : ''}
   </div>`;
 }
 
@@ -372,7 +413,7 @@ function vMas() {
   return heroSimple('Más', { back: false }) + `<div class="body plain"><section class="card more">${it.map(([r, t, s, i]) => `<a href="#${r}" data-go="${r}"><span class="ic">${icon(i)}</span><span><b>${t}</b><br><span class="small muted">${s}</span></span>${icon('chev', 16)}</a>`).join('')}</section>
     <section class="card"><div class="card-h"><h2>Datos del plan</h2></div><div class="kv small">
       <div><span>Empleos</span><b>OPEC 241258 · OPEC 247478</b></div><div><span>Actividades</span><b class="num">${ACTS.length}</b></div><div><span>Temas en el catálogo</span><b class="num">${D.temas.length}</b></div>
-      <div><span>Preguntas en el banco</span><b class="num">${QS.length}</b></div><div><span>Videos seleccionados</span><b class="num">${new Set(Object.values(VIDS).flat().map((v) => v.id)).size}</b></div></div>
+      <div><span>Preguntas en el banco</span><b class="num">${QS.length}</b></div><div><span>Videos seleccionados</span><b class="num">${new Set(Object.values(VIDS).flat().map((v) => v.id)).size}</b></div><div><span>Documentos en la biblioteca</span><b class="num">${DOCS.length}</b></div></div>
       ${D.empleos.filter((e, i, arr) => e.pruebas && arr.findIndex((x) => JSON.stringify(x.pruebas) === JSON.stringify(e.pruebas)) === i).map((e) => `<div class="eyebrow" style="margin-top:14px">Pruebas · ${D.empleos.filter((x) => JSON.stringify(x.pruebas) === JSON.stringify(e.pruebas)).length > 1 ? 'ambos empleos' : 'OPEC ' + e.opec}</div>${e.pruebas.items.map((p) => `<div class="trow"><div class="top"><b>${esc(p.prueba)}</b><span class="num">${pct(p.peso)}</span></div><div class="small muted">${esc(p.caracter)}${p.minimo ? ` · mínimo aprobatorio ${p.minimo}/100` : ''}</div></div>`).join('')}<p class="small muted" style="margin:6px 0 0">${esc(e.pruebas.fuente)}</p>`).join('')}
       <div class="small muted" style="margin-top:8px">Contenido cargado el ${D.importado ? fLarga(iso(new Date(D.importado))) : '—'}${D.version ? ` · versión ${esc(D.version)}` : ''}</div>
       <label class="btn" style="margin-top:12px">${icon('up', 18)} Actualizar contenido (aula-datos.json)<input type="file" id="imp" accept=".json,application/json" hidden></label>
@@ -406,7 +447,8 @@ function vEstadisticas() {
       <div class="eyebrow" style="margin-bottom:4px">Requieren refuerzo</div>${listaTemas(S.debiles, 'Ningún tema por debajo de 60% (se cuentan temas con al menos 4 respuestas).')}
       <div class="eyebrow" style="margin:12px 0 4px">Mejores resultados</div>${listaTemas(S.mejores, 'Aún no hay temas con 60 % o más de aciertos (mínimo 4 preguntas por tema).')}
       ${S.sinPractica.length ? `<div class="eyebrow" style="margin:12px 0 4px">Estudiados sin practicar</div><div class="acts">${S.sinPractica.map((t) => `<button class="btn-s" data-practicar="${t.id}">${esc(t.nombre)}</button>`).join('')}</div>` : ''}</section>
-    <section class="card"><div class="card-h"><h2>Cumplimiento del plan</h2></div>${emp.map(([o, x]) => `<div class="trow"><div class="top"><b>${chipEmp(o)} OPEC ${o}</b><span class="num">${pct(x.avance)}</span></div><div class="bar"><i style="width:${x.avance * 100}%"></i></div><div class="small muted num">${x.done} de ${x.ses} sesiones · ${x.atras} atrasadas · pruebas ${x.pruHechas}/${x.pru}${x.prom != null ? ` · promedio ${pct(x.prom)}` : ''}</div></div>`).join('')}</section>
+    <section class="card"><div class="card-h"><h2>Cumplimiento del plan</h2></div>${emp.map(([o, x]) => `<div class="trow"><div class="top"><b>${chipEmp(o)} OPEC ${o}</b><span class="num">${pct(x.avance)}</span></div><div class="bar"><i style="width:${x.avance * 100}%"></i></div><div class="small muted num">${x.done} de ${x.ses} sesiones · ${x.atras} atrasadas · pruebas ${x.pruHechas}/${x.pru}${x.prom != null ? ` · promedio ${pct(x.prom)}` : ''}</div></div>`).join('')}
+      ${DOCS.length ? (() => { const ds = DOCS.filter(docEnEmpleo), v = ds.filter(docVisto).length; return `<div class="trow"><div class="top"><b>${icon('doc', 16)} Biblioteca</b><span class="num">${v} de ${ds.length}</span></div><div class="bar"><i style="width:${ds.length ? (v / ds.length) * 100 : 0}%"></i></div><div class="small muted">Documentos consultados</div></div>`; })() : ''}</section>
   </div>`;
 }
 
@@ -421,6 +463,14 @@ function bind() {
     const sig = { Pendiente: 'En curso', 'En curso': 'Completada', Completada: 'Pendiente', 'Requiere refuerzo': 'Completada' }[e]; setEstado(a, sig); render(); }));
   app.querySelectorAll('[data-refuerzo]').forEach((b) => (b.onclick = () => { setEstado(ACTS.find((x) => x.id === b.dataset.refuerzo), 'Requiere refuerzo'); render(); }));
   app.querySelectorAll('[data-seen]').forEach((b) => b.addEventListener('click', () => { if (!state.vistos[b.dataset.seen]) { state.vistos[b.dataset.seen] = Date.now(); guardar(db.marcarVisto(b.dataset.seen)); } setTimeout(render, 300); }));
+  app.querySelectorAll('[data-doc]').forEach((b) => (b.onclick = () => go('pdfs', { doc: b.dataset.doc, from: ruta === 'pdfs' ? { q: sub.q, cat: sub.cat } : null, origen: ruta })));
+  app.querySelectorAll('[data-docback]').forEach((b) => (b.onclick = () => { const o = sub.origen && sub.origen !== 'pdfs' ? sub.origen : null; if (o) go(o); else go('pdfs', sub.from || {}); }));
+  app.querySelectorAll('[data-cat]').forEach((b) => (b.onclick = () => { sub = { ...sub, cat: b.dataset.cat }; render(); }));
+  app.querySelectorAll('[data-docopen]').forEach((b) => b.addEventListener('click', () => { const id = b.dataset.docopen; if (!state.vistos[id]) { state.vistos[id] = Date.now(); guardar(db.marcarVisto(id)); } setTimeout(render, 300); }));
+  app.querySelectorAll('[data-docmark]').forEach((b) => (b.onclick = () => { const id = b.dataset.docmark;
+    if (state.vistos[id]) { const v = { ...state.vistos }; delete v[id]; state.vistos = v; guardar(db.desmarcarVisto(id)); toast('Marcado como no consultado'); }
+    else { state.vistos = { ...state.vistos, [id]: Date.now() }; guardar(db.marcarVisto(id)); toast('Documento marcado como consultado'); } render(); }));
+  app.querySelectorAll('[data-vidtema]').forEach((b) => (b.onclick = () => go('videos', { q: temaNom(b.dataset.vidtema) })));
   app.querySelectorAll('[data-practicar]').forEach((b) => (b.onclick = () => { sub = { f: { tema: b.dataset.practicar, tipo: '' } }; iniciar('practica'); }));
   app.querySelectorAll('[data-prueba]').forEach((b) => (b.onclick = () => { const a = ACTS.find((x) => x.id === b.dataset.prueba);
     const lun = lunesDe(a.fecha); const temas = [...new Set(ACTS.filter((x) => x.opec === a.opec && esSesion(x) && (a.tipo === 'Prueba mensual' ? x.fecha <= a.fecha : x.fecha >= lun && x.fecha <= a.fecha)).map((x) => x.temaId))];
@@ -436,7 +486,8 @@ function bind() {
   const s = $('[data-sig]', app); if (s) s.onclick = () => { if (Z.i + 1 < Z.qs.length) { Z.i++; Z.sel = null; Z.respondida = false; } else terminarQuiz(); render(); window.scrollTo(0, 0); };
   app.querySelectorAll('[data-salir]').forEach((b) => (b.onclick = () => { Z = null; render(); }));
   const vq = $('#vq', app); if (vq) vq.oninput = () => { sub = { q: vq.value }; const pos = vq.selectionStart; render(); const n = $('#vq'); n.focus(); n.setSelectionRange(pos, pos); };
-  const rs = $('[data-reset]', app); if (rs) rs.onclick = () => { $('#reset-confirm').innerHTML = `<div class="fb bad"><b>¿Borrar todo tu avance?</b>Se perderán los estados, puntajes, respuestas y videos vistos. El plan y las preguntas se conservan.<div class="acts"><button class="btn-s" id="rs-si">Sí, borrar</button><button class="btn-s" id="rs-no">Cancelar</button></div></div>`;
+  const dq = $('#dq', app); if (dq) dq.oninput = () => { sub = { ...sub, q: dq.value }; const pos = dq.selectionStart; render(); const n = $('#dq'); n.focus(); n.setSelectionRange(pos, pos); };
+  const rs = $('[data-reset]', app); if (rs) rs.onclick = () => { $('#reset-confirm').innerHTML = `<div class="fb bad"><b>¿Borrar todo tu avance?</b>Se perderán los estados, puntajes, respuestas, videos vistos y documentos consultados. El plan y las preguntas se conservan.<div class="acts"><button class="btn-s" id="rs-si">Sí, borrar</button><button class="btn-s" id="rs-no">Cancelar</button></div></div>`;
     $('#rs-si').onclick = async () => { await guardar(db.borrarAvance()); toast('Avance borrado'); render(); }; $('#rs-no').onclick = () => ($('#reset-confirm').innerHTML = ''); };
   const roRef = $('#ro-ref', app); if (roRef) roRef.onchange = () => { RO.usarRefuerzos = roRef.checked; RO.confirmar = false; render(); };
   const roVie = $('#ro-vie', app); if (roVie) roVie.onchange = () => { RO.viernes = roVie.checked; RO.confirmar = false; render(); };
@@ -494,7 +545,7 @@ function alCambiar() {
   if (!state.contenido) return vistaVacia();
   const firma = state.contenido.importado;
   if (firma !== firmaContenido) { firmaContenido = firma; preparar(state.contenido); }
-  if (document.activeElement && document.activeElement.matches('#vq')) return; // no interrumpir la búsqueda
+  if (document.activeElement && document.activeElement.matches('#vq, #dq')) return; // no interrumpir la búsqueda
   render();
 }
 const h0 = (location.hash || '').slice(1); if (rutas[h0]) ruta = h0;
