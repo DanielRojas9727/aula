@@ -1,6 +1,6 @@
 // Service worker: guarda la app para abrir rápido y sin conexión. Los datos los maneja Firestore.
 // Para publicar una versión nueva, cambia el número de V.
-const V = 'aula-v6';
+const V = 'aula-v7';
 const SDK = 'aula-sdk-10.12.2'; // librerías de Firebase (versión fija): se guardan para funcionar sin conexión
 const ASSETS = ['./', 'index.html', 'app.css', 'app.js', 'data.js', 'reorg.js', 'stats.js', 'firebase-config.js', 'manifest.webmanifest', 'icon-192.png'];
 const SDK_URLS = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js'].map((f) => 'https://www.gstatic.com/firebasejs/10.12.2/' + f);
