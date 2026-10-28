@@ -274,3 +274,63 @@ label.btn { cursor: pointer; }
 .req { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .req span { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); }
 .req span.ok { color: var(--ok); background: var(--ok-2); box-shadow: none; }
+
+/* ---------- Splash: animación del ícono al abrir ---------- */
+#splash { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: var(--bg); transition: opacity .45s ease, transform .45s ease; }
+#splash.out { opacity: 0; transform: scale(1.04); pointer-events: none; }
+.sp-in { display: grid; justify-items: center; gap: 0; }
+.sp-tile { position: relative; width: 96px; height: 96px; border-radius: 29px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; overflow: hidden; box-shadow: 0 12px 32px color-mix(in srgb, var(--accent) 35%, transparent); animation: sp-pop .6s cubic-bezier(.2,1.4,.4,1) both; }
+.sp-tile svg { width: 74px; height: 74px; }
+.sp-tile path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: sp-draw .7s .25s cubic-bezier(.5,0,.2,1) forwards; }
+.sp-tile .sp-p2 { animation-delay: .75s; animation-duration: .35s; }
+.sp-tile::after { content: ''; position: absolute; inset: -20% auto -20% -60%; width: 45%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.65), transparent); transform: skewX(-18deg); animation: sp-shine .7s 1.0s ease-out forwards; }
+.sp-name { margin-top: 22px; font: 700 34px/1 var(--display); letter-spacing: -.01em; color: var(--ink); opacity: 0; animation: sp-up .5s .75s ease-out forwards; }
+.sp-tag { margin-top: 8px; font-size: 14px; color: var(--muted); opacity: 0; animation: sp-up .5s .95s ease-out forwards; }
+.sp-bar { margin-top: 28px; width: 120px; height: 3px; border-radius: 3px; background: var(--surface-2); overflow: hidden; opacity: 0; animation: sp-up .4s 1s ease-out forwards; }
+.sp-bar i { display: block; height: 100%; width: 100%; background: var(--accent); border-radius: 3px; transform: translateX(-100%); animation: sp-fill 1.3s 1s cubic-bezier(.4,0,.2,1) forwards; }
+@keyframes sp-pop { from { transform: scale(.55) rotate(-8deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes sp-draw { to { stroke-dashoffset: 0; } }
+@keyframes sp-shine { from { left: -60%; } to { left: 130%; } }
+@keyframes sp-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes sp-fill { to { transform: none; } }
+
+/* Ícono de la pantalla de acceso: aparece y "respira" */
+.login .logo { animation: sp-pop .55s cubic-bezier(.2,1.4,.4,1) both, respira 3.6s 1s ease-in-out infinite; filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--accent) 30%, transparent)); }
+@keyframes respira { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-3px) scale(1.04); } }
+
+/* Destello al entrar */
+.flash { position: fixed; inset: 0; z-index: 150; pointer-events: none; background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--accent) 45%, white) 0%, color-mix(in srgb, var(--accent) 18%, transparent) 38%, transparent 68%); opacity: 0; animation: flash .8s ease-out forwards; }
+@keyframes flash { 0% { opacity: 0; transform: scale(.7); } 25% { opacity: .85; } 100% { opacity: 0; transform: scale(1.7); } }
+.app.entra { animation: entra .55s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes entra { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-tile, .sp-tile path, .sp-tile::after, .sp-name, .sp-tag, .sp-bar, .sp-bar i, .login .logo, .app.entra { animation: none !important; }
+  .sp-tile path { stroke-dashoffset: 0; } .sp-name, .sp-tag, .sp-bar { opacity: 1; } .sp-bar i { transform: none; }
+}
+
+/* ---------- Racha ---------- */
+.racha { background: var(--tert-3); border-radius: var(--r); padding: 14px 16px; display: grid; gap: 12px; }
+.r-top { display: flex; align-items: center; gap: 12px; }
+.r-flame { width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); flex: none; }
+.r-flame.on { background: var(--tert-2); color: var(--tert); animation: llama 2.4s ease-in-out infinite; }
+@keyframes llama { 0%, 100% { transform: scale(1) rotate(0); } 50% { transform: scale(1.1) rotate(-4deg); } }
+.r-t { display: grid; gap: 1px; min-width: 0; }
+.r-t b { font: 700 17px/1.3 var(--display); color: var(--ink); }
+.r-t span { font-size: 13px; color: var(--ink-2); }
+.r-sem { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 11px; font-weight: 600; color: var(--muted); }
+.r-d { display: grid; justify-items: center; gap: 4px; }
+.r-d i { width: 26px; height: 26px; border-radius: 13px; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px var(--line); color: var(--on-accent); }
+.r-d.on i { background: var(--accent); box-shadow: none; }
+.r-d.hoy { color: var(--ink); } .r-d.hoy i:not(:has(svg)) { box-shadow: inset 0 0 0 2px var(--accent); }
+.r-d.falta i { box-shadow: inset 0 0 0 1.5px var(--warn); }
+.r-d.fut { opacity: .6; }
+@media (prefers-reduced-motion: reduce) { .r-flame.on { animation: none; } }
+
+/* ---------- Filtros de preguntas (chips) ---------- */
+.fchips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding: 2px 16px; scroll-snap-type: x proximity; }
+.fchips::-webkit-scrollbar { display: none; }
+.fchip { flex: none; min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--outline); background: transparent; color: var(--ink); font: 500 14px var(--font); display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; scroll-snap-align: start; }
+.fchip em { font-style: normal; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fchip[aria-pressed="true"] { background: var(--sec-2); color: var(--on-sec-2); border-color: transparent; font-weight: 600; }
+.fchip[aria-pressed="true"] em { color: inherit; opacity: .75; }

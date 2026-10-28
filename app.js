@@ -33,9 +33,10 @@ const IC = {
   spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  flame: '<path d="M12 3c.5 3.2 4.5 5.2 4.5 9.6A4.5 4.5 0 0 1 12 17a4.5 4.5 0 0 1-4.5-4.4c0-1.8.8-3 1.8-4 .2 1.2.8 1.9 1.6 2.2C10.6 8.4 11 5.6 12 3z"/><path d="M12 21a3.2 3.2 0 0 0 3.2-3.2"/>',
 };
 const icon = (k, s = 20) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
-const LOGO = '<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="12" style="fill:var(--accent)"/><g style="fill:none;stroke:var(--on-accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 13.5c3.5-1.4 7-1 10.5 1.3 3.5-2.3 7-2.7 10.5-1.3v13.5c-3.5-1.4-7-1-10.5 1.3-3.5-2.3-7-2.7-10.5-1.3z"/><path d="M20 14.8v13.5"/></g></svg>';
+const LOGO = '<svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="12" style="fill:var(--accent)"/><g style="fill:none;stroke:var(--on-accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path pathLength="1" d="M9.5 13.5c3.5-1.4 7-1 10.5 1.3 3.5-2.3 7-2.7 10.5-1.3v13.5c-3.5-1.4-7-1-10.5 1.3-3.5-2.3-7-2.7-10.5-1.3z"/><path pathLength="1" d="M20 14.8v13.5"/></g></svg>';
 
 // ---------- almacenamiento local del prototipo ----------
 // Preferencia local (solo este dispositivo): empleo seleccionado
@@ -183,6 +184,8 @@ function render() {
   if (!D) return;
   vista();
   $('#app').innerHTML = rutas[ruta]();
+  quitarSplash();
+  if (hubeLogin) { hubeLogin = false; destello(); }
   const act = ['plan', 'cronograma', 'estadisticas'].includes(ruta) ? 'mas' : ruta;
   $('#nav').innerHTML = NAV.map(([k, l, i]) => `<a href="#${k}" data-go="${k}" ${k === act ? 'aria-current="page"' : ''}><span class="ind">${icon(i, 22)}</span><span>${l}</span></a>`).join('');
   bind();
@@ -238,6 +241,7 @@ function vInicio() {
   return `<div class="hero"><div class="topbar">${LOGO}<span class="t">Aula</span>${state.demo ? '<span class="chip acc">Demo</span>' : ''}</div>
     <div class="sub">${fLarga(HOY).replace(/^./, (c) => c.toUpperCase())}</div><div class="greet">Hola, Daniel</div><div class="sub">Pruebas CNSC previstas para agosto de 2027</div>${selEmpleo()}</div>
   <div class="body lift">${avisoEnCurso()}
+    ${tarjetaRacha()}
     <section class="card"><div class="card-h"><h2>Avance del plan</h2><button class="link" data-go="estadisticas">Ver detalle</button></div>
       <div class="big-n"><b class="num">${m.done}</b><span>de ${m.ses} sesiones</span></div>
       <div class="bar lg" role="img" aria-label="${pct(m.avance)} del plan"><i class="acc" style="width:${Math.max(m.avance * 100, m.done ? 2 : 0)}%"></i></div>
@@ -257,6 +261,35 @@ function vInicio() {
     </div></section>
     ${state.demo ? '<p class="notice">Modo demo: el avance se guarda solo en este navegador.</p>' : ''}
   </div>`;
+}
+
+// ---------- racha de estudio y mensaje del día ----------
+// Un día cuenta si completaste una actividad o respondiste preguntas. Los días sin nada programado
+// (descansos, festivos, días libres) no rompen la racha; un día programado sin actividad sí la rompe (hoy no, aún tienes tiempo).
+function rachaEstudio() {
+  const act = new Set();
+  for (const p of Object.values(state.progreso)) if (p.estado === 'Completada') act.add(p.fechaCumplimiento || iso(new Date(p.ts)));
+  for (const r of RESP()) act.add(iso(new Date(r.ts)));
+  const prog = new Set(ACTS.filter((a) => esSesion(a) || esPrueba(a)).map((a) => a.fecha));
+  let actual = 0, mejor = 0;
+  const primero = [...act].sort()[0];
+  if (primero) for (let d = parse(primero); iso(d) <= HOY; d = addDays(d, 1)) {
+    const k = iso(d);
+    if (act.has(k)) { actual++; mejor = Math.max(mejor, actual); } else if (k !== HOY && prog.has(k)) actual = 0;
+  }
+  const lun = parse(lunesDe(HOY));
+  const semana = Array.from({ length: 7 }, (_, i) => { const k = iso(addDays(lun, i)); return { k, l: 'LMXJVSD'[i], on: act.has(k), hoy: k === HOY, fut: k > HOY, falta: k < HOY && !act.has(k) && prog.has(k) }; });
+  return { actual, mejor, hoyHecho: act.has(HOY), semana };
+}
+const FRASES = ['Tu esfuerzo de hoy es el resultado de mañana.', 'Una hora constante vale más que una noche en vela.', 'Cada sesión completada te acerca a la plaza.', 'No tienes que ir rápido, solo no parar.', 'Hoy suma, aunque sea poco.', 'El concurso se gana en las semanas aburridas.', 'Repasar lo que fallaste es la forma más corta de mejorar.', 'Constancia primero, perfección después.'];
+function tarjetaRacha() {
+  const r = rachaEstudio();
+  const dia = Math.floor((parse(HOY) - new Date(parse(HOY).getFullYear(), 0, 0)) / 864e5);
+  const frase = r.hoyHecho ? 'Hoy ya sumaste. Buen trabajo.' : FRASES[dia % FRASES.length];
+  const txt = r.actual ? `${r.actual} ${r.actual === 1 ? 'día' : 'días'} de racha` : 'Empieza tu racha hoy';
+  return `<section class="racha" aria-label="Racha de estudio"><div class="r-top"><span class="r-flame ${r.actual ? 'on' : ''}">${icon('flame', 22)}</span>
+    <div class="r-t"><b>${txt}</b><span>${r.mejor > r.actual ? `Tu mejor racha: ${r.mejor} · ` : ''}${esc(frase)}</span></div></div>
+    <div class="r-sem" role="img" aria-label="Actividad de esta semana">${r.semana.map((d) => `<span class="r-d ${d.on ? 'on' : ''} ${d.hoy ? 'hoy' : ''} ${d.falta ? 'falta' : ''} ${d.fut ? 'fut' : ''}"><i>${d.on ? icon('check', 12) : ''}</i>${d.l}</span>`).join('')}</div></section>`;
 }
 
 // --- Plan semanal ---
@@ -334,26 +367,34 @@ function vCronograma() {
 
 // --- Preguntas ---
 let Z = null; // sesión de práctica
+const ejeDe = (q) => TEMAS[q.temaId]?.eje || 'Otros';
+const filtraQ = (f) => QS.filter((q) => (!f.eje || ejeDe(q) === f.eje) && (!f.tema || q.temaId === f.tema) && (!f.tipo || q.tipo === f.tipo));
 function vPreguntas() {
   if (Z) return vQuiz();
   const aviso = avisoEnCurso();
-  const temas = [...new Set(QS.map((q) => q.temaId))];
-  const f = sub.f || { tema: '', tipo: '' };
-  const pool = QS.filter((q) => (!f.tema || q.temaId === f.tema) && (!f.tipo || q.tipo === f.tipo));
+  const f = sub.f || { eje: '', tema: '', tipo: '' };
+  const pool = filtraQ(f);
   const tipos = [...new Set(QS.map((q) => q.tipo))];
+  const ejes = []; for (const q of QS) { const e = ejeDe(q); if (!ejes.includes(e)) ejes.push(e); }
+  const nEje = (e) => QS.filter((q) => ejeDe(q) === e).length;
+  const temasEje = f.eje ? [...new Set(QS.filter((q) => ejeDe(q) === f.eje).map((q) => q.temaId))].sort((x, y) => preguntasDe(y).length - preguntasDe(x).length) : [];
+  const chip = (attr, val, txt, n, on) => `<button class="fchip" ${attr}="${esc(val)}" aria-pressed="${on}">${esc(txt)}<em>${n}</em></button>`;
+  const sinPreg = D.temas.map((t) => t.eje).filter((e, k, arr) => arr.indexOf(e) === k && !['Evaluación', 'Aplicación y repaso'].includes(e) && !ejes.includes(e));
   const nr = RESP().length;
   return heroSimple('Preguntas CNSC', { back: false }) + `<div class="body plain">${aviso}
-    <section class="card"><div class="filters">
-      <label class="field">Tema<select id="f-tema"><option value="">Todos (${QS.length})</option>${temas.map((t) => `<option value="${t}" ${f.tema === t ? 'selected' : ''}>${esc(temaNom(t))} (${preguntasDe(t).length})</option>`).join('')}</select></label>
-      <label class="field">Tipo<select id="f-tipo"><option value="">Todos</option>${tipos.map((t) => `<option ${f.tipo === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label></div>
-      <div style="display:grid;gap:8px;margin-top:12px">
+    <section class="card"><div class="eyebrow" style="margin-bottom:6px">Eje temático</div>
+      <div class="fchips" role="group" aria-label="Filtrar por eje">${chip('data-feje', '', 'Todos', QS.length, !f.eje)}${ejes.map((e) => chip('data-feje', e, e, nEje(e), f.eje === e)).join('')}</div>
+      ${f.eje ? `<div class="eyebrow" style="margin:12px 0 6px">Tema</div><div class="fchips" role="group" aria-label="Filtrar por tema">${chip('data-ftema', '', 'Todos los temas', nEje(f.eje), !f.tema)}${temasEje.map((t) => chip('data-ftema', t, temaNom(t), preguntasDe(t).length, f.tema === t)).join('')}</div>` : ''}
+      <div class="eyebrow" style="margin:12px 0 6px">Tipo de pregunta</div>
+      <div class="fchips" role="group" aria-label="Filtrar por tipo">${chip('data-ftipo', '', 'Todos', '', !f.tipo)}${tipos.map((t) => chip('data-ftipo', t, t, QS.filter((q) => q.tipo === t).length, f.tipo === t)).join('')}</div>
+      <div style="display:grid;gap:8px;margin-top:14px">
         <button class="btn" data-start="practica" ${pool.length ? '' : 'disabled'}>Practicar ${Math.min(N_PRACTICA, pool.length)} preguntas</button>
         <button class="btn ghost" data-start="simulacro" ${pool.length ? '' : 'disabled'}>${icon('clock', 18)} Simulacro cronometrado · ${Math.min(pool.length, N_PRUEBA)} preguntas · ${durTxt(Math.min(pool.length, N_PRUEBA))}</button></div></section>
     ${(() => { const hoy = ACTS.filter((a) => enEmpleo(a) && esSesion(a) && a.fecha === HOY && poolPracticaN(a.temaId)); return hoy.length ? `<section class="card"><div class="card-h"><h2>Tema del día</h2></div>${hoy.map((a) => { const r = requisitos(a); return `<div class="trow"><div class="top"><b>${esc(a.actividad)}</b>${chipEmp(a.opec)}</div><div class="small muted">${esc(temaNom(a.temaId))}${r && r.prac ? ` · práctica ${r.prac.n}/${r.prac.need}` : ''}</div><div class="acts"><button class="btn-s" data-ses="${a.id}">${icon('quiz', 15)} Practicar ${Math.min(N_PRACTICA, poolPracticaN(a.temaId))}</button></div></div>`; }).join('')}</section>` : ''; })()}
     <section class="card"><div class="card-h"><h2>Tu registro</h2></div>${nr ? `<div class="stat3"><div><b class="num">${nr}</b><span>Respondidas</span></div><div><b class="num" style="color:var(--ok)">${RESP().filter((r) => r.ok).length}</b><span>Correctas</span></div><div><b class="num" style="color:var(--bad)">${RESP().filter((r) => !r.ok).length}</b><span>Incorrectas</span></div></div>
       <button class="btn ghost" style="margin-top:12px" data-start="falladas" ${RESP().some((r) => !r.ok) ? '' : 'disabled'}>Repasar preguntas falladas</button>`
       : `<div class="empty"><b>Aún no has respondido preguntas</b>Tus aciertos por tema aparecerán aquí y actualizarán el cronograma.</div>`}</section>
-    <section class="card"><div class="small muted">El banco tiene ${QS.length} preguntas en ${new Set(QS.map((q) => q.temaId)).size} temas. Cada práctica toma ${N_PRACTICA} y las pruebas programadas ${N_PRUEBA}, con ${MIN_POR_PREGUNTA.toString().replace('.', ',')} minutos por pregunta.${QS.some((q) => !q.explicacionVerificada) ? ` ${QS.filter((q) => !q.explicacionVerificada).length} explicaciones están marcadas "Por verificar".` : ''}</div></section>
+    <section class="card"><div class="small muted">El banco tiene ${QS.length} preguntas en ${new Set(QS.map((q) => q.temaId)).size} temas. Cada práctica toma ${N_PRACTICA} y las pruebas programadas ${N_PRUEBA}, con ${MIN_POR_PREGUNTA.toString().replace('.', ',')} minutos por pregunta.${QS.some((q) => !q.explicacionVerificada) ? ` ${QS.filter((q) => !q.explicacionVerificada).length} explicaciones están marcadas "Por verificar".` : ''}${sinPreg.length ? ` Aún sin preguntas: ${sinPreg.map(esc).join(', ')}.` : ''}</div></section>
   </div>`;
 }
 function iniciar(modo, opts = {}) {
@@ -363,7 +404,7 @@ function iniciar(modo, opts = {}) {
   else if (opts.act) pool = poolPrueba(opts.act);
   else if (modo === 'falladas') { const ids = new Set(RESP().filter((r) => !r.ok).map((r) => r.qid)); pool = mezclar(QS.filter((q) => ids.has(q.id))).slice(0, N_PRACTICA); }
   else if (opts.tema) pool = poolPractica(opts.tema);
-  else { pool = mezclar(QS.filter((q) => (!f.tema || q.temaId === f.tema) && (!f.tipo || q.tipo === f.tipo))); pool = pool.slice(0, modo === 'simulacro' ? N_PRUEBA : N_PRACTICA); }
+  else { pool = mezclar(filtraQ(f)); pool = pool.slice(0, modo === 'simulacro' ? N_PRUEBA : N_PRACTICA); }
   if (!pool.length) { toast('No hay preguntas para esta práctica'); return; }
   const timed = modo === 'simulacro' || !!opts.act;
   Z = { modo: timed ? 'simulacro' : modo, qs: pool, i: 0, sel: null, ok: 0, n: 0, done: false, fin: timed ? Date.now() + Math.round(pool.length * MIN_POR_PREGUNTA * 60000) : null, act: opts.act || null, ses: opts.ses || null, respondida: false };
@@ -566,8 +607,11 @@ function bind() {
     sub = {}; iniciar('simulacro', { act: a }); }));
   app.querySelectorAll('[data-dia]').forEach((b) => (b.onclick = () => { sub = { dia: b.dataset.dia }; render(); }));
   app.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => { sub = { tab: b.dataset.tab }; render(); }));
-  const ft = $('#f-tema', app), fp = $('#f-tipo', app);
-  if (ft) ft.onchange = fp.onchange = () => { sub = { f: { tema: ft.value, tipo: fp.value } }; render(); };
+  const setF = (patch) => { sub = { f: { ...(sub.f || { eje: '', tema: '', tipo: '' }), ...patch } }; render(); };
+  app.querySelectorAll('[data-feje]').forEach((b) => (b.onclick = () => setF({ eje: b.dataset.feje, tema: '' })));
+  app.querySelectorAll('[data-ftema]').forEach((b) => (b.onclick = () => setF({ tema: b.dataset.ftema })));
+  app.querySelectorAll('[data-ftipo]').forEach((b) => (b.onclick = () => setF({ tipo: b.dataset.ftipo })));
+  app.querySelectorAll('.fchips').forEach((c) => { const on = c.querySelector('[aria-pressed="true"]'); if (on) c.scrollLeft = on.offsetLeft - (c.clientWidth - on.offsetWidth) / 2; });
   app.querySelectorAll('[data-start]').forEach((b) => (b.onclick = () => iniciar(b.dataset.start)));
   app.querySelectorAll('[data-opt]').forEach((b) => (b.onclick = () => { Z.sel = b.dataset.opt; render(); }));
   const r = $('[data-responder]', app); if (r) r.onclick = () => { const q = Z.qs[Z.i]; Z.respondida = true; const ok = Z.sel === q.respuesta; if (ok) Z.ok++; Z.n++; guardarZ();
@@ -617,8 +661,28 @@ async function importarArchivo(f) {
   } catch (e) { toast('No se pudo importar: ' + e.message); }
 }
 const GOOGLE = '<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
-function pantalla(html) { $('#app').innerHTML = `<section class="login">${html}</section>`; $('#nav').innerHTML = ''; }
+// ---------- pantalla de inicio (splash) y destello de ingreso ----------
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let hubeLogin = false;
+function quitarSplash() {
+  const s = document.getElementById('splash');
+  if (!s || s.dataset.q) return;
+  s.dataset.q = '1';
+  let visto = false;
+  try { visto = sessionStorage.getItem('aula-splash') === '1'; sessionStorage.setItem('aula-splash', '1'); } catch (e) {}
+  if (visto) { s.remove(); return; } // ya se mostró en esta sesión: no repetir
+  const espera = Math.max(0, (REDUCE ? 0 : 1750) - performance.now());
+  setTimeout(() => { s.classList.add('out'); setTimeout(() => s.remove(), 500); }, espera);
+}
+function destello() {
+  if (REDUCE) return;
+  const f = document.createElement('div'); f.className = 'flash'; f.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(f); setTimeout(() => f.remove(), 900);
+  const ap = document.getElementById('app'); ap.classList.remove('entra'); void ap.offsetWidth; ap.classList.add('entra');
+}
+function pantalla(html, final = true) { $('#app').innerHTML = `<section class="login">${html}</section>`; $('#nav').innerHTML = ''; if (final) quitarSplash(); }
 function vistaAcceso() {
+  hubeLogin = true;
   if (state.sinConfig) return pantalla(`${LOGO}<h1 class="brand">Aula</h1><p class="muted">Falta la configuración de Firebase. Pega el bloque de tu proyecto en el archivo firebase-config.js y sube el cambio.</p>`);
   pantalla(`${LOGO}<h1 class="brand">Aula</h1><p class="muted">Tu plan de estudio para los concursos CNSC</p>
     ${state.authError ? `<p class="err" role="alert">${esc(state.authError)}</p>` : ''}
@@ -632,9 +696,9 @@ function vistaVacia() {
   $('#imp0').onchange = (e) => importarArchivo(e.target.files[0]);
 }
 function alCambiar() {
-  if (!state.ready) { if (!$('.hero')) pantalla(`${LOGO}<p class="muted">Cargando…</p>`); return; }
+  if (!state.ready) { if (!$('.hero')) pantalla(`${LOGO}<p class="muted">Cargando…</p>`, false); return; }
   if (!state.user || state.authError || state.sinConfig) return vistaAcceso();
-  if (state.contenido === undefined) return pantalla(`${LOGO}<p class="muted">Cargando tu plan…</p>`);
+  if (state.contenido === undefined) return pantalla(`${LOGO}<p class="muted">Cargando tu plan…</p>`, false);
   if (!state.contenido) return vistaVacia();
   const firma = state.contenido.importado;
   if (firma !== firmaContenido) { firmaContenido = firma; preparar(state.contenido); }
