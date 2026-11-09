@@ -3,6 +3,7 @@
 import { init, subscribe, state, db, validarContenido } from './data.js';
 import { planificar, previo } from './reorg.js';
 import { calcular, graficaEvolucion } from './stats.js';
+import { sonar, sonidoActivo, fijarSonido } from './sonido.js';
 // ---------- utilidades ----------
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -125,7 +126,9 @@ const docVisto = (d) => !!state.vistos[d.id];
 const docUrl = (d) => (d.driveId ? `https://drive.google.com/file/d/${encodeURIComponent(d.driveId)}/view` : d.url && /^https:\/\//.test(d.url) ? d.url : null);
 const docEnEmpleo = (d) => !d.opec || P.empleo === 'todos' || String(d.opec) === P.empleo;
 
+let ultimoListo = 0;
 function setEstado(a, e, extra = {}) {
+  if (e === 'Completada' && estado(a) !== 'Completada') { ultimoListo = Date.now(); sonar('listo'); }
   state.progreso[a.id] = { ...(state.progreso[a.id] || {}), estado: e, fechaCumplimiento: e === 'Completada' ? HOY : null, ...extra };
   guardar(db.setProgreso(a.id, { estado: e, fechaCumplimiento: e === 'Completada' ? HOY : null, ...extra }));
 }
@@ -456,6 +459,7 @@ function vQuiz() {
 }
 function terminarQuiz() {
   Z.done = true;
+  if (Z.n) setTimeout(() => { if (Date.now() - ultimoListo > 1500) sonar('fin'); }, 0); // si la sesión se completó, ya sonó «listo»
   if (Z.act) setEstado(Z.act, 'Completada', { puntaje: Z.qs.length ? Z.ok / Z.qs.length : 0 });
   registrarPractica();
   guardarZ();
@@ -538,6 +542,8 @@ function vDoc(d) {
 function vMas() {
   const it = [['plan', 'Plan de estudio diario', 'Semana a semana, con clases y preguntas', 'plan'], ['cronograma', 'Cronograma de avance', 'Por temas y planeado vs real', 'cal'], ['estadisticas', 'Resultados y estadísticas', 'Aciertos, pruebas y cumplimiento', 'chart']];
   return heroSimple('Más', { back: false }) + `<div class="body plain"><section class="card more">${it.map(([r, t, s, i]) => `<a href="#${r}" data-go="${r}"><span class="ic">${icon(i)}</span><span><b>${t}</b><br><span class="small muted">${s}</span></span>${icon('chev', 16)}</a>`).join('')}</section>
+    <section class="card"><div class="card-h"><h2>Preferencias</h2></div>
+      <button class="switch" role="switch" aria-checked="${sonidoActivo()}" data-sonido><span><b>Sonidos y vibración</b><small>Al responder, acertar y completar sesiones. La vibración solo funciona en Android.</small></span><i aria-hidden="true"></i></button></section>
     <section class="card"><div class="card-h"><h2>Datos del plan</h2></div><div class="kv small">
       <div><span>Empleos</span><b>OPEC 241258 · OPEC 247478</b></div><div><span>Actividades</span><b class="num">${ACTS.length}</b></div><div><span>Temas en el catálogo</span><b class="num">${D.temas.length}</b></div>
       <div><span>Preguntas en el banco</span><b class="num">${QS.length}</b></div><div><span>Videos seleccionados</span><b class="num">${new Set(Object.values(VIDS).flat().map((v) => v.id)).size}</b></div><div><span>Documentos en la biblioteca</span><b class="num">${DOCS.length}</b></div></div>
@@ -613,8 +619,8 @@ function bind() {
   app.querySelectorAll('[data-ftipo]').forEach((b) => (b.onclick = () => setF({ tipo: b.dataset.ftipo })));
   app.querySelectorAll('.fchips').forEach((c) => { const on = c.querySelector('[aria-pressed="true"]'); if (on) c.scrollLeft = on.offsetLeft - (c.clientWidth - on.offsetWidth) / 2; });
   app.querySelectorAll('[data-start]').forEach((b) => (b.onclick = () => iniciar(b.dataset.start)));
-  app.querySelectorAll('[data-opt]').forEach((b) => (b.onclick = () => { Z.sel = b.dataset.opt; render(); }));
-  const r = $('[data-responder]', app); if (r) r.onclick = () => { const q = Z.qs[Z.i]; Z.respondida = true; const ok = Z.sel === q.respuesta; if (ok) Z.ok++; Z.n++; guardarZ();
+  app.querySelectorAll('[data-opt]').forEach((b) => (b.onclick = () => { Z.sel = b.dataset.opt; sonar('tap'); render(); }));
+  const r = $('[data-responder]', app); if (r) r.onclick = () => { const q = Z.qs[Z.i]; Z.respondida = true; const ok = Z.sel === q.respuesta; if (ok) Z.ok++; Z.n++; sonar(ok ? 'ok' : 'mal'); guardarZ();
     const r = { qid: q.id, temaId: q.temaId, ok, ts: Date.now(), modo: Z.modo }; state.respuestas = [...state.respuestas, r]; guardar(db.addRespuesta(r)); render(); };
   const s = $('[data-sig]', app); if (s) s.onclick = () => { if (Z.i + 1 < Z.qs.length) { Z.i++; Z.sel = null; Z.respondida = false; guardarZ(); } else terminarQuiz(); render(); window.scrollTo(0, 0); };
   app.querySelectorAll('[data-salir]').forEach((b) => (b.onclick = () => { salirQuiz(); render(); }));
@@ -645,6 +651,7 @@ function bind() {
   };
   const reo = $('[data-reorg]', app); if (reo) reo.onclick = () => go('cronograma', { tab: 'semanas' });
   const imp = $('#imp', app); if (imp) imp.onchange = () => importarArchivo(imp.files[0]);
+  const sw = $('[data-sonido]', app); if (sw) sw.onclick = () => { fijarSonido(!sonidoActivo()); render(); };
   const lo = $('[data-logout]', app); if (lo) lo.onclick = () => db.logout();
   clearInterval(tick);
   if (Z && Z.fin && !Z.done) tick = setInterval(() => { const t = $('#timer'); const rest = Math.max(0, Math.round((Z.fin - Date.now()) / 1000));
